@@ -100,23 +100,41 @@ namespace EmailPhoneConverter
             return hash.ToString();
         }
 
+        private static IDictionary<HashType, HashAlgorithm> hasherCache = new Dictionary<HashType, HashAlgorithm>();
+
         private static HashAlgorithm GetHasher(HashType hashType)
         {
+            HashAlgorithm hasher;
+
+            if (hasherCache.TryGetValue(hashType, out hasher))
+            {
+                return hasher;
+            }
+
             switch (hashType)
             {
                 case HashType.Md5:
-                    return new MD5CryptoServiceProvider();
+                    hasher = new MD5CryptoServiceProvider();
+                    break;
                 case HashType.Sha1:
-                    return new SHA1Managed();
+                    hasher = new SHA1Managed();
+                    break;
                 case HashType.Sha256:
-                    return new SHA256Managed();
+                    hasher = new SHA256Managed();
+                    break;
                 case HashType.Sha384:
-                    return new SHA384Managed();
+                    hasher = new SHA384Managed();
+                    break;
                 case HashType.Sha512:
-                    return new SHA512Managed();
+                    hasher = new SHA512Managed();
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(hashType));
             }
+
+            hasherCache[hashType] = hasher;
+
+            return hasher;
         }
 
         private static string GetOutputFileName(string platform, string segmentName)
