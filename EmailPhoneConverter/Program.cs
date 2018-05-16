@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace EmailPhoneConverter
@@ -13,49 +14,91 @@ namespace EmailPhoneConverter
     {
         static void Main(string[] args)
         {
-            if (args.Length < 2)
+            try
             {
-                Console.WriteLine("Необходимо указать два параметра: путь к папке с исходными файлами выгрузки в формате CSV, и путь к выходной папке для формирования выгрузки.");
-                return;
-            }
+                string sourceFolder;
+                string destinationFolder;
 
-            var sourceFolder = args[0];
-            if (!Directory.Exists(sourceFolder))
-            {
-                Console.WriteLine($"Папка исходных файлов ({sourceFolder}) не существует или нет прав доступа к ней.");
-                return;
-            }
-
-            var destinationFolder = args[1];
-            if (!Directory.Exists(destinationFolder))
-            {
-                Directory.CreateDirectory(destinationFolder);
-            }
-
-            foreach (var fileName in Directory.GetFiles(sourceFolder, "*.csv"))
-            {
-                var emailsAndPhones = GetEmailAndPhones(fileName);
-                foreach (var platformHashType in PlatformHashType)
+                if (args.Length == 0)
                 {
-                    var outputFileName = Path.Combine(destinationFolder, GetOutputFileName(platformHashType.Key, Path.GetFileNameWithoutExtension(fileName)));
-                    using (var writer = new StreamWriter(File.OpenWrite(outputFileName)))
-                    {
-                        bool started = false;
-                        foreach (var item in emailsAndPhones.Select(value => PreprocessValue(value)))
-                        {
-                            if (started)
-                            {
-                                writer.Write(',');
-                            }
-                            writer.Write(ComputeHash(platformHashType.Value, item));
-                            started = true;
-                        }
-                    }
-                    Console.WriteLine($"Создан файл {outputFileName}");
+                    sourceFolder = GetCurrentFolderSubfolder(inputFolder);
+                    destinationFolder = GetCurrentFolderSubfolder(outputFolder);
                 }
-                Console.WriteLine($"Файл {fileName} обработан.");
+                else if (args.Length < 2)
+                {
+                    Console.WriteLine("Если вы указываете параметры, то необходимо указать два параметра: путь к папке с исходными файлами выгрузки в формате CSV, и путь к выходной папке для формирования выгрузки.");
+                    return;
+                }
+                else
+                {
+                    sourceFolder = args[0];
+                    destinationFolder = args[1];
+                }
+
+                if (!Directory.Exists(sourceFolder))
+                {
+                    Console.WriteLine($"Папка исходных файлов ({sourceFolder}) не существует или нет прав доступа к ней.");
+                    return;
+                }
+
+                if (!Directory.Exists(destinationFolder))
+                {
+                    Directory.CreateDirectory(destinationFolder);
+                }
+
+                Console.WriteLine("Начался процесс обработки");
+
+                foreach (var fileName in Directory.GetFiles(sourceFolder, "*.csv"))
+                {
+                    var emailsAndPhones = GetEmailAndPhones(fileName);
+                    foreach (var platformHashType in PlatformHashType)
+                    {
+                        var outputFileName = Path.Combine(destinationFolder, GetOutputFileName(platformHashType.Key, Path.GetFileNameWithoutExtension(fileName)));
+                        using (var writer = new StreamWriter(File.OpenWrite(outputFileName)))
+                        {
+                            bool started = false;
+                            foreach (var item in emailsAndPhones.Select(value => PreprocessValue(value)))
+                            {
+                                if (started)
+                                {
+                                    writer.Write(',');
+                                }
+                                writer.Write(ComputeHash(platformHashType.Value, item));
+                                started = true;
+                            }
+                        }
+                        WriteLineInColor($"Создан файл {outputFileName}", ConsoleColor.Cyan);
+                    }
+                    WriteLineInColor($"Файл {fileName} обработан.", ConsoleColor.Green);
+                }
+                using (File.Create(Path.Combine(outputFolder, "Готово.done"))) { } // Dispose the file handler immediately
+                Console.WriteLine();
+                Console.WriteLine("Готово! ");
+                var cts = new CancellationTokenSource(3000);
+                Task.WaitAny(
+                    Task.Factory.StartNew(async () =>
+                    {
+                        while (true)
+                        {
+                            Console.Write(".");
+                            await Task.Delay(500);
+                        }
+                    }, cts.Token).Unwrap(),
+                    Task.Factory.StartNew(() => Console.ReadLine(), cts.Token),
+                    Task.Delay(3000));
             }
-            Console.WriteLine("Готово!");
+            catch (Exception ex)
+            {
+                Console.WriteLine("Произошла ошибка:");
+                WriteLineInColor(ex.ToString(), ConsoleColor.Red);
+                Console.WriteLine("Нажмите <Enter> для завершения.");
+                Console.ReadLine();
+            }
+        }
+
+        private static string GetCurrentFolderSubfolder(string subfolderName)
+        {
+            return Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location), subfolderName);
         }
 
         private static IEnumerable<string> GetEmailAndPhones(string fileName)
@@ -76,8 +119,8 @@ namespace EmailPhoneConverter
             {
                 ["Google"] = HashType.Sha256,
                 ["Yandex"] = HashType.Md5,
-                ["VK"] = HashType.Md5,
-                ["FB"] = HashType.Sha256
+                //["VK"] = HashType.Md5,
+                //["FB"] = HashType.Sha256
             };
 
         private static string ComputeHash(HashType hashType, string input)
@@ -139,7 +182,7 @@ namespace EmailPhoneConverter
 
         private static string GetOutputFileName(string platform, string segmentName)
         {
-            return $"{segmentName}{platform}.csv";
+            return $"{segmentName}_{platform}.csv";
         }
 
         private static Lazy<Regex> emailRegexLazy = new Lazy<Regex>(() => new Regex(@"^([\w\.\-]+)@([\w\-]+)((\.(\w){2,3})+)$"));
@@ -171,5 +214,16 @@ namespace EmailPhoneConverter
 
             return sb.ToString();
         }
+
+        private static void WriteLineInColor(string text, ConsoleColor color)
+        {
+            var oldColor = Console.ForegroundColor;
+            Console.ForegroundColor = color;
+            Console.WriteLine(text);
+            Console.ForegroundColor = oldColor;
+        }
+
+        private const string inputFolder = "input";
+        private const string outputFolder = "output";
     }
 }
