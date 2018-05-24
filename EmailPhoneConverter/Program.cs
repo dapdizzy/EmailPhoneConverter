@@ -57,7 +57,7 @@ namespace EmailPhoneConverter
                         using (var writer = new StreamWriter(File.OpenWrite(outputFileName)))
                         {
                             bool started = false;
-                            foreach (var item in emailsAndPhones.Select(value => PreprocessValue(value)))
+                            foreach (var item in emailsAndPhones.Where(value => !FilterOutValue(value)).Select(value => PreprocessValue(value)))
                             {
                                 if (started)
                                 {
@@ -194,6 +194,11 @@ namespace EmailPhoneConverter
         private static bool IsEmail(string value)
         {
             return EmailRegex.IsMatch(value);
+        }
+
+        private static bool FilterOutValue(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) || Regex.Replace(value, @"\s+", "").ToUpperInvariant() == "N/A";
         }
 
         private static string PreprocessValue(string value)
